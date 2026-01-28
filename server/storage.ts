@@ -1,38 +1,82 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import { db } from "./db";
+import { products, type Product, type InsertProduct } from "@shared/schema";
+import { eq, desc, sum, count, sql } from "drizzle-orm";
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  getProducts(filters?: { category?: string; status?: string; search?: string }): Promise<Product[]>;
+  getProduct(id: number): Promise<Product | undefined>;
+  createProduct(product: InsertProduct): Promise<Product>;
+  updateProduct(id: number, updates: Partial<InsertProduct>): Promise<Product>;
+  deleteProduct(id: number): Promise<void>;
+  getStats(): Promise<{
+    totalProducts: number;
+    totalValue: number;
+    lowStockCount: number;
+    categoriesCount: number;
+  }>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-
-  constructor() {
-    this.users = new Map();
+export class DatabaseStorage implements IStorage {
+  async getProducts(filters?: { category?: string; status?: string; search?: string }): Promise<Product[]> {
+    let query = db.select().from(products);
+    
+    // Simple in-memory filtering for now as Drizzle query building with conditionals is verbose without helper
+    // For a real app, I'd build the where clause dynamically
+    const allProducts = await query.orderBy(desc(products.id));
+    
+    return allProducts.filter(p => {
+      if (filters?.category && p.category !== filters.category) return false;
+      if (filters?.status) {
+        const stockStatus = p.quantity === 0 ? 'out_of_stock' : p.quantity < 10 ? 'low_stock' : 'in_stock';
+        if (stockStatus !== filters.status) return false;
+      }
+      if (filters?.search) {
+        const searchLower = filters.search.toLowerCase();
+        return p.name.toLowerCase().includes(searchLower) || p.sku.toLowerCase().includes(searchLower);
+      }
+      return true;
+    });
   }
 
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+  async getProduct(id: number): Promise<Product | undefined> {
+    const [product] = await db.select().from(products).where(eq(products.id, id));
+    return product;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+  async createProduct(insertProduct: InsertProduct): Promise<Product> {
+    const [product] = await db.insert(products).values(insertProduct).returning();
+    return product;
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+  async updateProduct(id: number, updates: Partial<InsertProduct>): Promise<Product> {
+    const [product] = await db
+      .update(products)
+      .set({ ...updates, lastUpdated: new Date() })
+      .where(eq(products.id, id))
+      .returning();
+    return product;
+  }
+
+  async deleteProduct(id: number): Promise<void> {
+    await db.delete(products).where(eq(products.id, id));
+  }
+
+  async getStats() {
+    // Using raw SQL or separate queries for aggregation
+    const allProducts = await db.select().from(products);
+    
+    const totalProducts = allProducts.length;
+    const totalValue = allProducts.reduce((sum, p) => sum + (p.price * p.quantity), 0);
+    const lowStockCount = allProducts.filter(p => p.quantity < 10).length;
+    const categoriesCount = new Set(allProducts.map(p => p.category)).size;
+
+    return {
+      totalProducts,
+      totalValue,
+      lowStockCount,
+      categoriesCount
+    };
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
