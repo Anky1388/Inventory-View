@@ -1,6 +1,6 @@
 import { useProductStats } from "@/hooks/use-products";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Package, DollarSign, AlertTriangle, XCircle, TrendingUp, ArrowUpRight } from "lucide-react";
+import { Package, DollarSign, AlertTriangle, XCircle, TrendingUp, ArrowUpRight, BarChart3 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { motion } from "framer-motion";
